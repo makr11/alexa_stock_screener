@@ -7,7 +7,7 @@ from ask_sdk_core.handler_input import HandlerInput
 from ask_sdk_model.ui import SimpleCard
 from ask_sdk_model import Response
 
-from api_requests import get_price
+from api_requests import search_quote, get_quote_data
 sb = SkillBuilder()
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,13 @@ def launch_request_handler(handler_input):
 def launch_request_handler(handler_input):
 	
 	stock = handler_input.request_envelope.request.intent.slots["stock"].value
-	price = get_price(stock.title())
-	speech_text = f"Current price of {stock} is {price}"
+	quote_info = search_quote(stock.lower())
+    quote_data = get_quote_data(quote_info['1. symbol'])
+    speech_text = f"Current price of {quote_info['1. symbol']} is {round(float(quote_data['05. price']), 2)} {quote_info['8. currency']}, last traded on {quote_data['07. latest trading day']}"
+	prompt = "Would you like more informations?"
 
-	return handler_input.response_builder.speak(speech_text).set_card(
-		SimpleCard(speech_text)).response
+	return handler_input.response_builder.speak(speech_text).ask(prompt).set_should_end_session(
+        False).response
 
 
 @sb.request_handler(can_handle_func=is_intent_name("AMAZON.HelpIntent"))

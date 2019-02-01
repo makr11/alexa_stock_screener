@@ -5,13 +5,17 @@ from ask_sdk_core.utils import is_request_type, is_intent_name
 from ask_sdk_core.handler_input import HandlerInput
 
 from ask_sdk_model.ui import SimpleCard
-from ask_sdk_model import Response
+from ask_sdk_model.dialog import ConfirmIntentDirective, ElicitSlotDirective
+from ask_sdk_model import Response, IntentConfirmationStatus
 
 from api_requests import search_quote, get_quote_data
 sb = SkillBuilder()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+def make_currency(value):
+    return round(float(value), 2)
 
 
 @sb.request_handler(can_handle_func=is_request_type("LaunchRequest"))
@@ -27,16 +31,45 @@ def launch_request_handler(handler_input):
 
 @sb.request_handler(can_handle_func=is_intent_name("PricesIntent"))
 def launch_request_handler(handler_input):
-	
-	stock = handler_input.request_envelope.request.intent.slots["stock"].value
-	quote_info = search_quote(stock.lower())
-    quote_data = get_quote_data(quote_info['1. symbol'])
-    speech_text = f"Current price of {quote_info['1. symbol']} is {round(float(quote_data['05. price']), 2)} {quote_info['8. currency']}, last traded on {quote_data['07. latest trading day']}"
-	prompt = "Would you like more informations?"
-
-	return handler_input.response_builder.speak(speech_text).ask(prompt).set_should_end_session(
-        False).response
-
+    request = handler_input.request_envelope.request
+    session_attributes = handler_input.attributes_manager.session_attributes
+    stock = request.intent.slots["stock"].value
+    
+    if request.intent.confirmation_status==IntentConfirmationStatus.CONFIRMED:
+        quote_data = session_attributes["quote_data"]
+        quote_info = session_attributes["quote_info"]
+        currency = quote_info['8. currency']
+        speech_text = (f"{quote_info['2. name']} "
+                        f"opening price is {make_currency(quote_data['02. open'])} {currency}, "
+                        f"highest price is {make_currency(quote_data['03. high'])} {currency}")
+        
+        return handler_input.response_builder.speak(speech_text).response
+    
+    elif request.intent.confirmation_status==IntentConfirmationStatus.DENIED:
+        return handler_input.response_builder.set_should_end_session(False).response
+    
+    matches = search_quote(stock.lower())
+    
+    if not matches:
+        speech_text = f"I haven't found any information for {stock}. Please repeat or try with another stock."
+        
+        return handler_input.response_builder.speak(speech_text).add_directive(ElicitSlotDirective(slot_to_elicit="stock")).response
+        
+    elif matches and request.intent.confirmation_status==IntentConfirmationStatus.NONE:
+        quote_data = get_quote_data(matches[0]['1. symbol'])
+        quote_info = matches[0]
+        if not quote_data:
+            quote_data = get_quote_data(matches[1]['1. symbol'])
+            quote_info = matches[1]
+        speech_text = (f"Current price of {quote_info['2. name']} "
+                        f"is {make_currency(quote_data['05. price'])} {quote_info['8. currency']}, "
+                        f"last traded on {quote_data['07. latest trading day']}. "
+                        "Would you like more informations?")
+        session_attributes["quote_data"] = quote_data
+        session_attributes["quote_info"] = quote_info
+        
+        return handler_input.response_builder.speak(speech_text).add_directive(ConfirmIntentDirective()).response
+    
 
 @sb.request_handler(can_handle_func=is_intent_name("AMAZON.HelpIntent"))
 def help_intent_handler(handler_input):

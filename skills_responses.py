@@ -1,5 +1,7 @@
 import logging
 
+import boto3
+
 from ask_sdk_core.skill_builder import SkillBuilder
 from ask_sdk_core.utils import is_request_type, is_intent_name
 from ask_sdk_core.handler_input import HandlerInput
@@ -56,6 +58,24 @@ def launch_request_handler(handler_input):
         return handler_input.response_builder.speak(speech_text).add_directive(ElicitSlotDirective(slot_to_elicit="stock")).response
         
     elif matches and request.intent.confirmation_status==IntentConfirmationStatus.NONE:
+        print("before")
+        client = boto3.client('ssm')
+        response = client.send_command(
+            InstanceIds=['i-0ebdd2b77dacea11f'],
+            DocumentName="AWS-RunShellScript",
+            Parameters={
+                'commands': [
+                    "#!/bin/bash",
+                    "cd /home/ubuntu/stock_screener/bin",
+                    "source ./activate",
+                    "cd ./stock_screener_script",
+                    "echo $(ls)",
+                    "python alpha_vantage_api.py create-table AMZN",
+                    "deactivate"
+                ]
+            }
+        )
+        print(after)
         quote_data = get_quote_data(matches[0]['1. symbol'])
         quote_info = matches[0]
         if not quote_data:
